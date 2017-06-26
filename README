@@ -1,0 +1,33 @@
+LRVM
+
+Team Members: Yash Thadhani, Vivian D'silva
+
+How log files are used to accomplish persistency and transaction semantics.
+
+1] In our implemtation, we have a unique file for each mapped segment. Each time the user calls rvm_commit_trans, log files are created/updated on the disk (a unique log file for each mapped segment). These log files comprise all the changes made to a data segment. Persistence is achieved since these log files exist on the disk and data records may be recovered from these log files in case of a system crash. Writing directly to the external data segment on the disk is unadvisable since a system crash during writes to the disk could leave disk resident records in an inconsistent state. Hence, logs are created and periodically truncated to update the external data segment.
+
+2] Transactions are defined by their atomicity that is they occur all at once or not at all. This is achieved since log files are only created/updated when the transaction commits. Hence, if the system crashes during a transaction, all modifications made are lost. On the other hand, if the system crashes after the transaction commits, all modifications exist (either as logs on the disk or the external data segment may be updated post-truncaction).
+
+
+What is written in them? How do the files get cleaned up, so that they do not expand indefinitely?
+
+1] In our implementation, we write (offset|value) tuples to our logs. We created a single struct called record_t which was used to represent a single log record. We create a log record in memory each time the user calls rvm_about_to_modify. Its members include the offset position, size and data (the data contained in the memory resident version of the data segment starting at the offset position comprising of size bytes). The data field is used as the undo record in case the transaction is aborted. If the transaction commits, we use the offset and size members (ignore the data member) to extract the modified chunk of data from the latest copy of the memory resident data segment (post-modification). The offset and the data so obtained are stored the log file. Each log record is stored on a different line in the file.
+
+2] There are two possible ways in which the log files may get cleaned up:
+	* The user calls rvm_truncate_log. In this case all the logs within the rvm directory passed to truncate method are truncated (their 		  contents are used to update the external data segment on disk and then the log files are deleted.
+	* The user might have unmapped the data segment without truncating logs or the system could have crashed prior to log truncation. So 		  when the user maps this data segment again (with existing logs), we truncate the log file corresponding to this data segment and 		  then fetch the updated data segment into memory.
+
+
+Running Code:
+
+Execute the make command within the project directory. A librvm.a file is generated. This can be used to compile the test programs, for example:
+g++ basic.c librvm.a
+Then run the output executable generated:
+./a.out
+
+The rvm directory is created within the project directory itself.
+
+
+Important note:
+
+We have used | as a delimiter while adding records to the log file. So a log record comprises of an (offset|value) tuple. Using | in the data strings would lead to incorrect/undefined behavior.
